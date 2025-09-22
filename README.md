@@ -1,103 +1,119 @@
-# VPN Remote Management
+# VPN Remote Updater Bot
 
-## Что делает
-Позволяет менять адрес VPN (remote) через серверный `remote.txt` (и бота) и автоматически подтягивать его на роутерах. Лог появляется только при реальном изменении.
+Телеграм‑бот для удалённого управления файлом `remote.txt`, который читают роутеры (Padavan/Asus) для получения актуального адреса VPN сервера.
 
-## Быстрая установка (одной командой)
+## Термины
+
+| Понятие | Что это | Откуда берётся |
+|---------|---------|----------------|
+| HOST_DOMAIN | Домен сервера, по которому роутеры скачивают `remote.txt` (например: `vpn.example.com`) | Вводится вручную при установке (`install.sh`) |
+| remote.txt (содержимое) | Текущее значение VPN удалённого адреса (IP или домен) | Меняется через Telegram‑бота |
+| Начальное значение remote.txt | `mydomain.com` (плейсхолдер) | Создаётся установщиком |
+
+## Возможности
+- `/set <домен|ip>` — обновляет `remote.txt`
+- `/status` — показывает текущее значение
+- Ограничение прав по списку админов
+- Автозапуск через systemd
+- Установка одним скриптом `install.sh`
+- Возможность принимать просто текст от админа как новое значение (если включено `ALLOW_PLAIN_SET`)
+
+## Установка
+
 ```bash
-git clone https://github.com/XSFORM/vpn-remote-bot.git && cd vpn-remote-bot && bash install.sh
+git clone https://github.com/XSFORM/vpn-remote-bot.git
+cd vpn-remote-bot
+bash install.sh
 ```
 
-## Установка сервера (по шагам)
+Во время установки будут заданы вопросы:
+1. HOST_DOMAIN (домен, где будет доступен файл remote.txt), например: `vpn.example.com`
+2. Telegram Bot Token
+3. Admin Telegram ID(s) — список ID через запятую
+
+После установки:
+- `remote.txt` содержит `mydomain.com`
+- Сервис бота запущен
+- Можно сменить значение через `/set <новый_адрес>`
+
+## Пример обращения роутера
+
+Роутер периодически загружает (HTTP):
+```
+http://HOST_DOMAIN/remote.txt
+```
+
+## Пример скрипта для Padavan (замени HOST_DOMAIN на свой)
+
+```sh
+#!/bin/sh
+NEW_REMOTE=$(wget -q -O - http://HOST_DOMAIN/remote.txt)
+if [ -n "$NEW_REMOTE" ]; then
+    nvram set vpn_client_server="$NEW_REMOTE"
+    nvram set vpnc_peer="$NEW_REMOTE"
+    nvram commit
+    nvram set vpn_client_enable=0
+    nvram commit
+    sleep 3
+    nvram set vpn_client_enable=1
+    nvram commit
+    logger -t vpn-update "Remote VPN обновлён на $NEW_REMOTE"
+else
+    logger -t vpn-update "Remote VPN не обновлён: пустой ответ"
+fi
+```
+
+## Команды бота
+
+| Команда | Описание |
+|---------|----------|
+| /start  | Краткая информация |
+| /help   | Подсказка |
+| /status | Текущее значение remote.txt |
+| /set VALUE | Установить новое значение (только админы) |
+
+(Если `ALLOW_PLAIN_SET=true` — простое сообщение от админа без команды тоже установит значение.)
+
+## Повторная конфигурация
+
 ```bash
-bash install.sh
-# или повторная конфигурация
 bash install.sh --reconfigure
 ```
 
-После установки:
-- `http://HOST_DOMAIN/remote.txt` — текущее значение (домена или host:port).
-- `http://HOST_DOMAIN/update_vpn_remote.sh` — основной скрипт (выкладывается/копируется вручную, либо через деплой).
+## Логи
 
-## Новая архитектура (v7+)
-Сделано разделение на:
-1. `update_script.sh` (bootstrap) — лёгкая обёртка. Скачивает:
-   - `update_vpn_remote.sh`
-   - `remote.txt`
-   Вызывает основной скрипт и используется в cron/старте.
-2. `update_vpn_remote.sh` — основная логика:
-   - Парс `host` или `host:port`
-   - Чистка лишних `remote` в `vpn_client1_ovpn`
-   - Правка `/etc/openvpn/client/client.conf`
-   - Перезапуск OpenVPN (soft kill/start по умолчанию; можно toggle)
-   - Запись значения в nvram (commit только при изменении)
-   - Лог `vpn-update: APPLIED: old -> new`
-
-## Формат remote.txt
-Первая строка:
-```
-example.com
-```
-или
-```
-example.com:443
-```
-Если порт не указан — берётся из `nvram get vpnc_ov_port` или `DEFAULT_PORT` (по умолчанию 1194).
-
-## Подготовка роутера (актуально для новой схемы)
-1. Скопировать (или вставить) содержимое `router/update_script.sh` в `/etc/storage/update_script.sh`.
-2. Внутри поменять `REMOTE_DOMAIN` (или задать через export в старте).
-3. Сделать исполняемым:
-   ```sh
-   chmod +x /etc/storage/update_script.sh
-   ```
-4. В "Run After Router Started" добавить:
-   ```sh
-   /etc/storage/update_script.sh &
-   ```
-5. Cron (пример каждые 2 минуты):
-   ```sh
-   echo "*/2 * * * * /etc/storage/update_script.sh" > /etc/storage/cron/crontabs/admin
-   nvram set crond_enable=1
-   nvram commit
-   ```
-
-После первого запуска bootstrap скачает `update_vpn_remote.sh` и `remote.txt`.
-
-## Поведение
-- Если значение remote не изменилось — тишина.
-- Если изменилось:
-  ```
-  vpn-update: APPLIED: <старое> -> host:port (method=soft)
-  ```
-- Bootstrap при обновлении основной логики:
-  ```
-  vpn-update-bootstrap: main script updated (md5 ...)
-  ```
-
-## Настройки (переменные)
-Можно экспортировать перед запуском bootstrap (в старте):
-| Переменная        | По умолчанию              | Значение |
-|-------------------|---------------------------|----------|
-| REMOTE_DOMAIN     | microlabsound.ru          | Домен сервера |
-| BASE_URL          | http://$REMOTE_DOMAIN     | База URL |
-| REMOTE_URL        | $BASE_URL/remote.txt      | Источник значения |
-| MAIN_URL          | $BASE_URL/update_vpn_remote.sh | Где брать основной скрипт |
-| RESTART_METHOD    | soft                      | soft / toggle / none |
-| SAVE_TO_FLASH     | 1                         | mtd_storage.sh save при изменении |
-| DEFAULT_PORT      | 1194                      | Используется если порт не указан |
-| NVRAM_KEY_MAIN    | vpn_client_server         | Основной ключ |
-| NVRAM_KEY_PEER    | vpnc_peer                 | Второй ключ (можно пустым) |
-
-## Ручное принудительное применение
-```sh
-/export RESTART_METHOD=soft
-/etc/storage/script/update_vpn_remote.sh --force
+```bash
+journalctl -u vpn-remote-bot.service -f
 ```
 
-## Бот
-Команда `/set host` или `/set host:port` обновляет `remote.txt`.
-Через ≤ интервал cron роутеры подхватят.
+## Файлы
 
-## Примечание
-`remote.txt` в репозитории хранить не обязательно — главное, чтобы по HTTP он выдавался. Основной скрипт можно обновлять централизованно (роутеры сами скачивают свежую версию).
+| Файл | Назначение |
+|------|------------|
+| install.sh | Установщик / пере-конфигуратор |
+| remote.txt | Текущее значение remote (изначально `mydomain.com`) |
+| bot/bot.py | Код Telegram‑бота |
+| systemd/vpn-remote-bot.service | Unit для systemd |
+| .env | Переменные окружения (создаётся установщиком) |
+| .env.example | Шаблон структуры (без значений) |
+
+## Безопасность
+- В `ADMIN_IDS` указываются только доверенные Telegram ID.
+- Можно ограничить доступ к `remote.txt` (фаервол / basic auth / IP allowlist).
+- Для шифрованного трафика можно настроить HTTPS (Nginx + TLS), но это опционально.
+
+## Обновление кода
+
+```bash
+git pull
+bash install.sh --reconfigure
+```
+
+## Удаление
+
+```bash
+systemctl disable --now vpn-remote-bot.service
+rm /etc/systemd/system/vpn-remote-bot.service
+systemctl daemon-reload
+# (опционально) удалить директорию репозитория
+```
