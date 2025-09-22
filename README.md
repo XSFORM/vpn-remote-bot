@@ -3,7 +3,12 @@
 ## Что делает
 Позволяет менять адрес VPN (remote) через серверный `remote.txt` (и бота) и автоматически подтягивать его на роутерах. Лог появляется только при реальном изменении.
 
-## Установка сервера
+## Быстрая установка (одной командой)
+```bash
+git clone https://github.com/XSFORM/vpn-remote-bot.git && cd vpn-remote-bot && bash install.sh
+```
+
+## Установка сервера (по шагам)
 ```bash
 bash install.sh
 # или повторная конфигурация
@@ -17,7 +22,7 @@ bash install.sh --reconfigure
 ## Подготовка роутера
 1. Скачать или скопировать содержимое `router/update_script.sh` в `/etc/storage/update_script.sh`.
 2. Внутри заменить:
-   ```
+   ```sh
    REMOTE_URL="http://YOUR_HOST_DOMAIN/remote.txt"
    ```
 3. Сделать исполняемым:
@@ -25,7 +30,7 @@ bash install.sh --reconfigure
    chmod +x /etc/storage/update_script.sh
    ```
 4. Добавить в "Run After Router Started":
-   ```
+   ```sh
    /etc/storage/update_script.sh &
    ```
 5. Cron (пример каждые 10 минут):
@@ -42,23 +47,23 @@ bash install.sh --reconfigure
   vpn-update: UPDATED: <старый> -> <новый>
   ```
 - Перезапуск клиента выполняется через toggle (0→1). Можно отключить:
-  ```
+  ```sh
   RESTART_METHOD="none"
   ```
 
 ## Настройки в скрипте роутера
-| Переменная | Значение | Назначение |
-|------------|----------|-----------|
-| REMOTE_URL | URL до remote.txt | Источник адреса |
-| RESTART_METHOD | toggle / none | Перезапуск клиента |
-| SAVE_TO_FLASH | 1 / 0 | Сохранение в постоянную память |
-| NVRAM_KEY_MAIN | ключ nvram | Основной remote параметр |
-| NVRAM_KEY_PEER | ключ nvram (опц.) | Второй (если нужен) |
+| Переменная       | Значение             | Назначение                          |
+|------------------|----------------------|-------------------------------------|
+| REMOTE_URL       | URL до remote.txt    | Источник адреса                     |
+| RESTART_METHOD   | toggle / none        | Перезапуск клиента                  |
+| SAVE_TO_FLASH    | 1 / 0                | Сохранение в постоянную память      |
+| NVRAM_KEY_MAIN   | ключ nvram           | Основной remote параметр            |
+| NVRAM_KEY_PEER   | ключ nvram (опц.)    | Второй (если нужен)                 |
 
 ## Обновление remote
 Меняешь содержимое `remote.txt` (ботом или вручную) → при следующем cron‑запуске роутер применит и залогирует.
 
 ## Примечание
-`remote.txt` в репо хранить не обязательно (install.sh создаёт его в WEB_ROOT и делает симлинк). Если не нужен симлинк — можно убрать строку `ln -sf ...`.
+`remote.txt` в репо хранить не обязательно (install.sh создаёт его в WEB_ROOT и делает симлинк). Если не нужен симлинк — можно убрать соответствующую строку в скрипте установки.
 
 ---
