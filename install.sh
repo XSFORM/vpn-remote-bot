@@ -13,19 +13,13 @@ info(){ color "36" "[INFO] $*"; }
 warn(){ color "33" "[WARN] $*"; }
 err(){ color "31" "[ERR ] $*" >&2; }
 
-if [[ $EUID -ne 0 ]]; then
-  warn "Рекомендуется запускать под root (или через sudo), иначе могут быть проблемы с systemd."
-fi
-
-RECONFIG=0
-if [[ "$1" == "--reconfigure" ]]; then
-  RECONFIG=1
-  info "Режим: пере-конфигурация"
-fi
-
-check_cmd() { command -v "$1" >/dev/null 2>&1 || { err "Не найдено: $1"; exit 1; }; }
+# --- Автоматическая установка необходимых пакетов ---
+info "Установка системных зависимостей и обновление пакетов..."
+sudo apt update
+sudo apt install -y git nginx python3-venv
 
 info "Проверка зависимостей..."
+check_cmd() { command -v "$1" >/dev/null 2>&1 || { err "Не найдено: $1"; exit 1; }; }
 check_cmd python3
 check_cmd systemctl
 
@@ -34,6 +28,16 @@ REQ_MINOR=10
 MINOR=$(echo "$PY_VER" | cut -d. -f2)
 if [[ "${PY_VER%%.*}" -lt 3 || $MINOR -lt $REQ_MINOR ]]; then
   warn "Рекомендуется Python >= 3.10 (найдено ${PY_VER})."
+fi
+
+if [[ $EUID -ne 0 ]]; then
+  warn "Рекомендуется запускать под root (или через sudo), иначе могут быть проблемы с systemd."
+fi
+
+RECONFIG=0
+if [[ "$1" == "--reconfigure" ]]; then
+  RECONFIG=1
+  info "Режим: пере-конфигурация"
 fi
 
 if [[ $RECONFIG -eq 0 ]]; then
@@ -104,5 +108,8 @@ URL для роутеров: ${FETCH_URL}
 
 Переконфигурация: bash install.sh --reconfigure
 Логи: journalctl -u ${SYSTEMD_UNIT} -f
+
+Nginx установлен!
+Проверь конфиг и размести remote.txt в нужной директории для отдачи через HTTP.
 ========================================
 NEXT
